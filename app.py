@@ -1,26 +1,21 @@
-
-import os
 import tempfile
 from pathlib import Path
 
 import streamlit as st
 from moviepy.editor import (
     AudioFileClip,
-    ImageClip,
-    VideoFileClip,
     CompositeVideoClip,
-    concatenate_videoclips,
     TextClip,
+    concatenate_videoclips,
 )
-from PIL import Image
 
-from utils.audio_tools import analyze_audio
-from utils.media_tools import (
+from audio_tools import analyze_audio
+from media_tools import (
     save_uploaded_files,
     build_media_plan,
     build_clips_from_plan,
 )
-from utils.lyrics_tools import (
+from lyrics_tools import (
     parse_manual_lyrics,
     auto_transcribe_if_available,
 )
@@ -33,7 +28,18 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 TEMP_DIR.mkdir(exist_ok=True)
 
 st.title("AI Lyric Video Maker")
-st.caption("Version 1 MVP: upload music + photos/videos, then auto-generate a beat-aware montage with lyric overlays.")
+st.caption(
+    "Version 1 MVP: upload music + photos/videos, then auto-generate a beat-aware montage with lyric overlays."
+)
+
+
+def get_video_size(aspect_ratio: str):
+    if aspect_ratio == "9:16":
+        return (720, 1280)
+    if aspect_ratio == "16:9":
+        return (1280, 720)
+    return (1080, 1080)
+
 
 with st.sidebar:
     st.header("Settings")
@@ -41,7 +47,9 @@ with st.sidebar:
     target_duration = st.slider("Target duration (seconds)", 15, 120, 45, 5)
     image_min = st.slider("Minimum image duration", 1.0, 5.0, 2.0, 0.5)
     image_max = st.slider("Maximum image duration", 1.0, 8.0, 3.5, 0.5)
-    use_transcription = st.checkbox("Try automatic transcription (if Whisper is installed)", value=False)
+    use_transcription = st.checkbox(
+        "Try automatic transcription (if Whisper is installed)", value=False
+    )
     subtitle_on = st.checkbox("Overlay lyrics / captions", value=True)
     randomize_media = st.checkbox("Shuffle media automatically", value=True)
 
@@ -77,14 +85,11 @@ with right:
         if lyrics_mode == "Plain lyrics text"
         else "Example:\n00:00 | We were young and free\n00:07 | Under the city lights"
     )
-    lyrics_text = st.text_area("Paste lyrics (optional)", height=220, placeholder=lyric_placeholder)
-
-def get_video_size(aspect_ratio: str):
-    if aspect_ratio == "9:16":
-        return (720, 1280)
-    if aspect_ratio == "16:9":
-        return (1280, 720)
-    return (1080, 1080)
+    lyrics_text = st.text_area(
+        "Paste lyrics (optional)",
+        height=220,
+        placeholder=lyric_placeholder,
+    )
 
 if audio_file is not None:
     st.audio(audio_file)
@@ -93,7 +98,11 @@ if st.button("Generate video", type="primary", use_container_width=True):
     if audio_file is None:
         st.error("Please upload an audio file first.")
         st.stop()
-    if not image_files and not video_files:
+
+    has_images = bool(image_files) and len(image_files) > 0
+    has_videos = bool(video_files) and len(video_files) > 0
+
+    if not has_images and not has_videos:
         st.error("Please upload at least one image or video.")
         st.stop()
 
@@ -105,12 +114,14 @@ if st.button("Generate video", type="primary", use_container_width=True):
         audio_info = analyze_audio(saved["audio_path"], target_duration=target_duration)
 
     with st.expander("Audio analysis details", expanded=False):
-        st.write({
-            "duration_sec": round(audio_info["duration"], 2),
-            "tempo_bpm": round(audio_info["tempo"], 2),
-            "beat_count": len(audio_info["beat_times"]),
-            "target_duration_sec": round(audio_info["target_duration"], 2),
-        })
+        st.write(
+            {
+                "duration_sec": round(audio_info["duration"], 2),
+                "tempo_bpm": round(audio_info["tempo"], 2),
+                "beat_count": len(audio_info["beat_times"]),
+                "target_duration_sec": round(audio_info["target_duration"], 2),
+            }
+        )
 
     subtitles = []
     if subtitle_on:
@@ -124,8 +135,10 @@ if st.button("Generate video", type="primary", use_container_width=True):
             with st.spinner("Trying automatic transcription..."):
                 subtitles = auto_transcribe_if_available(saved["audio_path"])
                 if not subtitles:
-                    st.warning("Automatic transcription was not available. The video will be generated without subtitles unless you paste lyrics.")
-        elif lyrics_text.strip() == "":
+                    st.warning(
+                        "Automatic transcription was not available. The video will be generated without subtitles unless you paste lyrics."
+                    )
+        else:
             st.info("No lyrics provided. The video will be generated without subtitle overlays.")
 
     with st.spinner("Planning montage..."):
@@ -139,7 +152,7 @@ if st.button("Generate video", type="primary", use_container_width=True):
             randomize=randomize_media,
         )
 
-    if not plan:
+    if plan is None or plan.empty:
         st.error("Could not build a media plan. Try uploading more files.")
         st.stop()
 
@@ -157,8 +170,14 @@ if st.button("Generate video", type="primary", use_container_width=True):
         final_video = concatenate_videoclips(clips, method="compose")
 
         audio_clip = AudioFileClip(str(saved["audio_path"]))
-        final_duration = min(final_video.duration, audio_info["target_duration"], audio_clip.duration)
-        final_video = final_video.subclip(0, final_duration).set_audio(audio_clip.subclip(0, final_duration))
+        final_duration = min(
+            final_video.duration,
+            audio_info["target_duration"],
+            audio_clip.duration,
+        )
+        final_video = final_video.subclip(0, final_duration).set_audio(
+            audio_clip.subclip(0, final_duration)
+        )
 
         layers = [final_video]
 
@@ -168,6 +187,7 @@ if st.button("Generate video", type="primary", use_container_width=True):
                 end = min(final_duration, float(seg["end"]))
                 if end <= start:
                     continue
+
                 try:
                     txt = (
                         TextClip(
@@ -179,7 +199,6 @@ if st.button("Generate video", type="primary", use_container_width=True):
                             align="center",
                             stroke_color="black",
                             stroke_width=2,
-                            font="Arial-Bold",
                         )
                         .set_start(start)
                         .set_end(end)
@@ -187,10 +206,11 @@ if st.button("Generate video", type="primary", use_container_width=True):
                     )
                     layers.append(txt)
                 except Exception:
-                    # Font issues on some environments: fail gracefully
                     pass
 
-        composite = CompositeVideoClip(layers, size=(out_w, out_h)).set_duration(final_duration)
+        composite = CompositeVideoClip(layers, size=(out_w, out_h)).set_duration(
+            final_duration
+        )
         output_path = OUTPUT_DIR / "ai_lyric_video_output.mp4"
 
         composite.write_videofile(
@@ -207,6 +227,7 @@ if st.button("Generate video", type="primary", use_container_width=True):
 
     st.success("Video generated.")
     st.video(str(output_path))
+
     with open(output_path, "rb") as f:
         st.download_button(
             "Download generated video",
