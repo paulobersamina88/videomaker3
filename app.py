@@ -9,15 +9,10 @@ from moviepy.editor import (
     concatenate_videoclips,
 )
 
-from audio_tools import analyze_audio
-from media_tools import (
-    save_uploaded_files,
-    build_media_plan,
-    build_clips_from_plan,
+from utils.audio_tools import analyze_audio
+from utils.media_tools import save_uploaded_files, build_media_plan, build_clips_from_plan
 )
-from lyrics_tools import (
-    parse_manual_lyrics,
-    auto_transcribe_if_available,
+from utils.lyrics_tools import parse_manual_lyrics, auto_transcribe_if_available
 )
 
 st.set_page_config(page_title="AI Lyric Video Maker", layout="wide")
